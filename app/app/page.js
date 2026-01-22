@@ -100,6 +100,7 @@ function copy(text) {
 }
 
 export default function AppHome() {
+  const [copiedKey, setCopiedKey] = useState(null);
   const router = useRouter();
 
   const [email, setEmail] = useState("");
@@ -244,6 +245,13 @@ function detectPlacePush(placeText) {
   // fallback (на всякий случай)
   return "в вашем доме";
 }
+  function copyWithFeedback(key, text) {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 1500);
+    });
+  }
+
   // ---------- generation ----------
   function generate() {
     setResults([]);
@@ -956,26 +964,49 @@ const placePush = detectPlacePush(placeTextRaw);
                     <div className="rounded-md border border-gray-200 bg-white p-3">
                       <div className="text-xs text-gray-500 mb-2">Быстрое копирование</div>
                       <div className="grid gap-2">
-                        <Button variant="secondary" onClick={() => copy(selected.news_title)}>
-                          Скопировать заголовок новости
-                        </Button>
-                        <Button
-  onClick={() => navigator.clipboard.writeText(r.news_html)}
-  variant="primary"
+                       <Button
+  onClick={() =>
+    copyWithFeedback(`news-title-${idx}`, r.news_title)
+  }
 >
-  Скопировать HTML новости
+  {copiedKey === `news-title-${idx}`
+    ? "Заголовок скопирован"
+    : "Скопировать заголовок новости"}
 </Button>
 
-                        <Button onClick={() => navigator.clipboard.writeText(r.push_title)}>
-  Скопировать заголовок пуша
+                        <Button
+  variant="warning"
+  onClick={() =>
+    copyWithFeedback(`news-html-${idx}`, r.news_html)
+  }
+>
+  {copiedKey === `news-html-${idx}`
+    ? "HTML скопирован"
+    : "Скопировать HTML новости"}
 </Button>
+
+
+                        <Button
+  onClick={() =>
+    copyWithFeedback(`push-title-${idx}`, r.push_title)
+  }
+>
+  {copiedKey === `push-title-${idx}`
+    ? "Заголовок скопирован"
+    : "Скопировать заголовок пуша"}
+</Button>
+
 
 <Button
-  onClick={() => navigator.clipboard.writeText(r.push_body)}
-  variant="primary"
+  onClick={() =>
+    copyWithFeedback(`push-body-${idx}`, r.push_body)
+  }
 >
-  Скопировать текст пуша
+  {copiedKey === `push-body-${idx}`
+    ? "Текст скопирован"
+    : "Скопировать текст пуша"}
 </Button>
+
 
                       </div>
                     </div>
