@@ -51,9 +51,9 @@ function Card({ children, className = "" }) {
   );
 }
 
-function Button({ children, onClick, variant = "secondary", className = "", disabled, title }) {
+function Button({ children, onClick, variant = "secondary", className = "", disabled, title, type = "button" }) {
   const base =
-    "inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition border";
+    "inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition border active:scale-[0.99]";
   const styles =
     variant === "primary"
       ? "bg-orange-500 text-white border-orange-500 hover:bg-orange-600"
@@ -65,6 +65,7 @@ function Button({ children, onClick, variant = "secondary", className = "", disa
   const dis = disabled ? "opacity-50 cursor-not-allowed" : "";
   return (
     <button
+      type={type}
       className={cn(base, styles, dis, className)}
       onClick={onClick}
       disabled={disabled}
@@ -85,6 +86,7 @@ function TabButton({ active, children, onClick }) {
           ? "bg-white border-gray-300 shadow-sm text-gray-900"
           : "bg-transparent border-transparent text-gray-600 hover:bg-white/70 hover:border-gray-200"
       )}
+      type="button"
     >
       {children}
     </button>
@@ -95,13 +97,10 @@ function FieldLabel({ children }) {
   return <div className="text-xs text-gray-500 mb-1">{children}</div>;
 }
 
-function copy(text) {
-  navigator.clipboard.writeText(text ?? "");
-}
-
 export default function AppHome() {
-  const [copiedKey, setCopiedKey] = useState(null);
   const router = useRouter();
+
+  const [copiedKey, setCopiedKey] = useState(null);
 
   const [email, setEmail] = useState("");
   const [okrug, setOkrug] = useState("");
@@ -126,12 +125,41 @@ export default function AppHome() {
   const [link, setLink] = useState("");
   const [topicShort, setTopicShort] = useState("");
 
-  // табличный режим для ввода — по умолчанию выключен (как ты просил “убрать предпросмотр”)
+  // табличный режим для ввода — по умолчанию выключен
   const [showGrid, setShowGrid] = useState(false);
   const [cellEdits, setCellEdits] = useState({});
 
   const [results, setResults] = useState([]);
   const [selectedIdx, setSelectedIdx] = useState(0);
+
+  // ---------- copy helper (safe) ----------
+  async function copyWithFeedback(key, text) {
+    const value = String(text ?? "");
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        // Fallback
+        const ta = document.createElement("textarea");
+        ta.value = value;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        ta.style.top = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+
+      setCopiedKey(key);
+      window.setTimeout(() => setCopiedKey(null), 1500);
+    } catch (e) {
+      console.error("Copy failed:", e);
+      alert("Не удалось скопировать. Проверь права доступа к буферу обмена или попробуй другой браузер.");
+    }
+  }
 
   // ---------- auth/profile ----------
   useEffect(() => {
@@ -194,7 +222,6 @@ export default function AppHome() {
     setRowErrors([]);
     setPlaceOverrides({});
     setCellEdits({});
-    // showGrid не трогаем: пользовательский выбор
   }, [tab]);
 
   const scenarioOptions = useMemo(() => SCENARIOS[tab] || [], [tab]);
@@ -224,32 +251,6 @@ export default function AppHome() {
     setSelectedIdx(0);
     setPlaceOverrides({});
     setCellEdits({});
-  }
-function detectPlacePush(placeText) {
-  const s = placeText.toLowerCase();
-
-  // около дома → двор
-  if (s.includes("около дома")) {
-    return "в вашем дворе";
-  }
-
-  // холл / подъезд → дом
-  if (
-    s.includes("холл") ||
-    s.includes("подъезд") ||
-    s.includes("в холле")
-  ) {
-    return "в вашем доме";
-  }
-
-  // fallback (на всякий случай)
-  return "в вашем доме";
-}
-  function copyWithFeedback(key, text) {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedKey(key);
-      setTimeout(() => setCopiedKey(null), 1500);
-    });
   }
 
   // ---------- generation ----------
@@ -486,7 +487,7 @@ function detectPlacePush(placeText) {
       return;
     }
 
-    // ===== ПИКЕТЫ / ВСТРЕЧИ (старая логика) =====
+    // ===== ПИКЕТЫ / ВСТРЕЧИ =====
     if (!currentTemplate) {
       alert("Нет шаблона для выбранного типа и сценария. Создай его в /admin/templates.");
       return;
@@ -518,10 +519,9 @@ function detectPlacePush(placeText) {
       const dateTime = `${dateList} ${timeRange}`.trim();
       const pushRelative = buildPushRelative(g.dates);
 
-const placeTextRaw = g.place_final ?? "";
-const placeText = formatPlaceHuman(placeTextRaw);
-const placePush = detectPlacePush(placeTextRaw);
-
+      const placeTextRaw = g.place_final ?? "";
+      const placeText = formatPlaceHuman(placeTextRaw);
+      const placePush = detectPlacePush(placeTextRaw);
 
       const topicFull = (g.topic_raw || "").trim();
       const topicShortFinal = (topicShort || topicFull || "").trim();
@@ -601,8 +601,10 @@ const placePush = detectPlacePush(placeTextRaw);
               </Button>
             )}
             {isAdmin && (
-  <Button onClick={() => router.push("/admin/users")}>Админка</Button>
-)}
+              <Button onClick={() => router.push("/admin/users")}>
+                Админка
+              </Button>
+            )}
             <Button variant="secondary" onClick={logout}>
               Выйти
             </Button>
@@ -637,6 +639,7 @@ const placePush = detectPlacePush(placeTextRaw);
                   ))}
                 </select>
               </div>
+
               {tab === "piket" && scenarioKey === "cancel" && (
                 <div>
                   <FieldLabel>Причина отмены</FieldLabel>
@@ -694,7 +697,7 @@ const placePush = detectPlacePush(placeTextRaw);
 
         {/* Input + Results layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Left: input + result table */}
+          {/* Left */}
           <div className="lg:col-span-7 space-y-4">
             {/* TSV input */}
             <Card>
@@ -867,13 +870,13 @@ const placePush = detectPlacePush(placeTextRaw);
                 ) : (
                   <div className="overflow-auto rounded-md border border-gray-200">
                     <table className="w-full text-sm border-collapse">
-<thead className="bg-gray-50">
-  <tr className="text-gray-600">
-    <th className="text-left p-2 border-b border-gray-200">Заголовок</th>
-    <th className="text-left p-2 border-b border-gray-200">Адрес</th>
-    <th className="text-left p-2 border-b border-gray-200 w-[140px]">Дата</th>
-  </tr>
-</thead>
+                      <thead className="bg-gray-50">
+                        <tr className="text-gray-600">
+                          <th className="text-left p-2 border-b border-gray-200">Заголовок</th>
+                          <th className="text-left p-2 border-b border-gray-200">Адрес</th>
+                          <th className="text-left p-2 border-b border-gray-200 w-[140px]">Дата</th>
+                        </tr>
+                      </thead>
 
                       <tbody>
                         {results.map((r, idx) => {
@@ -922,7 +925,7 @@ const placePush = detectPlacePush(placeTextRaw);
                 <div className="text-sm font-semibold">Детали</div>
                 {selected ? (
                   <div className="text-xs text-gray-500">
-                    {selected.address} · {selected.status === "ok" ? "ok" : "error"}
+                    {selected.address}
                   </div>
                 ) : (
                   <div className="text-xs text-gray-500">Выбери строку слева</div>
@@ -934,7 +937,6 @@ const placePush = detectPlacePush(placeTextRaw);
                   <div className="text-sm text-gray-500">Нет выбранной записи.</div>
                 ) : (
                   <div className="grid grid-cols-1 gap-4">
-                    {/* Two columns inside details */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {/* NEWS */}
                       <div className="rounded-md border border-gray-200 bg-white p-3">
@@ -964,57 +966,43 @@ const placePush = detectPlacePush(placeTextRaw);
                     <div className="rounded-md border border-gray-200 bg-white p-3">
                       <div className="text-xs text-gray-500 mb-2">Быстрое копирование</div>
                       <div className="grid gap-2">
-                       <Button
-  onClick={() =>
-    copyWithFeedback(`news-title-${idx}`, r.news_title)
-  }
->
-  {copiedKey === `news-title-${idx}`
-    ? "Заголовок скопирован"
-    : "Скопировать заголовок новости"}
-</Button>
+                        <Button
+                          onClick={() => copyWithFeedback(`news-title-${selectedIdx}`, selected.news_title)}
+                        >
+                          {copiedKey === `news-title-${selectedIdx}`
+                            ? "Заголовок новости скопирован"
+                            : "Скопировать заголовок новости"}
+                        </Button>
 
                         <Button
-  variant="warning"
-  onClick={() =>
-    copyWithFeedback(`news-html-${idx}`, r.news_html)
-  }
->
-  {copiedKey === `news-html-${idx}`
-    ? "HTML скопирован"
-    : "Скопировать HTML новости"}
-</Button>
-
+                          variant="primary"
+                          onClick={() => copyWithFeedback(`news-html-${selectedIdx}`, selected.news_html)}
+                        >
+                          {copiedKey === `news-html-${selectedIdx}`
+                            ? "HTML новости скопирован"
+                            : "Скопировать HTML новости"}
+                        </Button>
 
                         <Button
-  onClick={() =>
-    copyWithFeedback(`push-title-${idx}`, r.push_title)
-  }
->
-  {copiedKey === `push-title-${idx}`
-    ? "Заголовок скопирован"
-    : "Скопировать заголовок пуша"}
-</Button>
+                          onClick={() => copyWithFeedback(`push-title-${selectedIdx}`, selected.push_title)}
+                        >
+                          {copiedKey === `push-title-${selectedIdx}`
+                            ? "Заголовок пуша скопирован"
+                            : "Скопировать заголовок пуша"}
+                        </Button>
 
-
-<Button
-  onClick={() =>
-    copyWithFeedback(`push-body-${idx}`, r.push_body)
-  }
->
-  {copiedKey === `push-body-${idx}`
-    ? "Текст скопирован"
-    : "Скопировать текст пуша"}
-</Button>
-
-
+                        <Button
+                          onClick={() => copyWithFeedback(`push-body-${selectedIdx}`, selected.push_body)}
+                        >
+                          {copiedKey === `push-body-${selectedIdx}`
+                            ? "Текст пуша скопирован"
+                            : "Скопировать текст пуша"}
+                        </Button>
                       </div>
                     </div>
 
-                    {/* Small help */}
                     <div className="text-xs text-gray-500">
-                      Совет: если нужно “как в админке”, просто копируй заголовок + HTML в редактор новости,
-                      и push заголовок + текст в пуш-уведомление.
+                      Совет: копируй заголовок + HTML в редактор новости, и push заголовок + текст в пуш-уведомление.
                     </div>
                   </div>
                 )}
