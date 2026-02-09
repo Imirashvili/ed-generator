@@ -582,7 +582,7 @@ export default function AppHome() {
         {/* Top bar */}
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <div className="text-lg font-semibold">ED Generator</div>
+            <div className="text-lg font-semibold">Генератор пушей</div>
             <div className="text-sm text-gray-500">
               {email}
               {okrug ? ` · ${okrug}` : ""}
