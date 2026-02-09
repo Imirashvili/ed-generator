@@ -14,7 +14,7 @@ import {
   formatPlaceHuman,
   detectPlacePush,
   formatDateListHuman,
-  formatObhodDateTimeHumanMulti,
+  formatObhodDateTimeHumanMulti
 } from "../../lib/generator";
 
 
