@@ -104,6 +104,12 @@ function FieldLabel({ children }) {
   return <div className="text-xs text-gray-500 mb-1">{children}</div>;
 }
 
+// --- helper: причина отмены "пожелания собственников" ---
+function isCancelWishesReason(raw) {
+  const s = String(raw || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return s.includes("в соответствии с пожеланиями собственников");
+}
+
 export default function AppHome() {
   const router = useRouter();
 
@@ -483,8 +489,19 @@ export default function AppHome() {
     }
 
     // ===== ПИКЕТЫ / ВСТРЕЧИ =====
-    if (!currentTemplate) {
-      alert("Нет шаблона для выбранного типа и сценария. Создай его в /admin/templates.");
+
+    // --- сценарий с учетом причины (только для пикетов) ---
+    let scenarioKeyFinal = scenarioKey;
+    if (tab === "piket" && scenarioKey === "cancel" && isCancelWishesReason(cancelReason)) {
+      scenarioKeyFinal = "cancel_wishes";
+    }
+
+    // --- выбираем шаблон по финальному ключу ---
+    const templateFinal =
+      templates.find((t) => t.event_type === tab && t.scenario_key === scenarioKeyFinal && t.is_active) || null;
+
+    if (!templateFinal) {
+      alert(`Нет шаблона для выбранного типа и сценария (${tab}/${scenarioKeyFinal}). Создай его в /admin/templates.`);
       return;
     }
 
@@ -503,7 +520,8 @@ export default function AppHome() {
       return patched;
     });
 
-    const { groups, rowErrors } = buildGroups(rowsPatched, tab, scenarioKey, placeOverrides);
+    // ВАЖНО: buildGroups тоже должен получить финальный scenario_key
+    const { groups, rowErrors } = buildGroups(rowsPatched, tab, scenarioKeyFinal, placeOverrides);
     setRowErrors(rowErrors);
 
     const out = [];
@@ -538,7 +556,7 @@ export default function AppHome() {
         LINK: link,
       };
 
-      const rules = currentTemplate.rules || {};
+      const rules = templateFinal.rules || {};
       const errs = [];
 
       if (rules.requires_place_text && !placeText) errs.push("Не заполнено место (PLACE_TEXT)");
@@ -548,14 +566,14 @@ export default function AppHome() {
 
       out.push({
         event_type: tab,
-        scenario_key: scenarioKey,
+        scenario_key: scenarioKeyFinal,
         address: g.address,
         date_list_human: dateList,
         time_range_human: timeRange,
-        news_title: renderTemplate(currentTemplate.title_news, vars),
-        news_html: renderTemplate(currentTemplate.body_news_html, vars),
-        push_title: renderTemplate(currentTemplate.push_title, vars),
-        push_body: renderTemplate(currentTemplate.push_body, vars),
+        news_title: renderTemplate(templateFinal.title_news, vars),
+        news_html: renderTemplate(templateFinal.body_news_html, vars),
+        push_title: renderTemplate(templateFinal.push_title, vars),
+        push_body: renderTemplate(templateFinal.push_body, vars),
         status: errs.length ? "error" : "ok",
         error_text: errs.join("; "),
       });
