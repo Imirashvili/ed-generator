@@ -17,7 +17,6 @@ import {
   formatObhodDateTimeHumanMulti
 } from "../../lib/generator";
 
-
 const TABS = [
   { key: "obhod", label: "Обходы" },
   { key: "piket", label: "Пикеты" },
@@ -108,6 +107,31 @@ function FieldLabel({ children }) {
 function isCancelWishesReason(raw) {
   const s = String(raw || "").trim().toLowerCase().replace(/\s+/g, " ");
   return s.includes("в соответствии с пожеланиями собственников");
+}
+
+// --- helper: split dates into consecutive blocks (по ts) ---
+function splitConsecutiveBlocks(dates) {
+  const arr = Array.isArray(dates) ? [...dates] : [];
+  if (arr.length === 0) return [];
+
+  arr.sort((a, b) => a.ts - b.ts);
+
+  const blocks = [];
+  let cur = [arr[0]];
+
+  for (let i = 1; i < arr.length; i++) {
+    const prev = arr[i - 1];
+    const d = arr[i];
+    const isNext = d.ts - prev.ts === 24 * 60 * 60 * 1000;
+
+    if (isNext) cur.push(d);
+    else {
+      blocks.push(cur);
+      cur = [d];
+    }
+  }
+  blocks.push(cur);
+  return blocks;
 }
 
 export default function AppHome() {
@@ -220,9 +244,15 @@ export default function AppHome() {
 
   const scenarioOptions = useMemo(() => SCENARIOS[tab] || [], [tab]);
 
+  // ✅ template hint должен учитывать cancel_wishes
+  const scenarioKeyForHint = useMemo(() => {
+    if (tab === "piket" && scenarioKey === "cancel" && isCancelWishesReason(cancelReason)) return "cancel_wishes";
+    return scenarioKey;
+  }, [tab, scenarioKey, cancelReason]);
+
   const currentTemplate = useMemo(() => {
-    return templates.find((t) => t.event_type === tab && t.scenario_key === scenarioKey) || null;
-  }, [templates, tab, scenarioKey]);
+    return templates.find((t) => t.event_type === tab && t.scenario_key === scenarioKeyForHint) || null;
+  }, [templates, tab, scenarioKeyForHint]);
 
   // ---------- grid helpers ----------
   function getCell(row, field, fallback = "") {
@@ -527,56 +557,61 @@ export default function AppHome() {
     const out = [];
 
     for (const g of groups) {
-      const dateList = formatDateListHuman(g.dates);
-      const timeRange = g.time.timeText;       // "с 18:30 до 20:30" (уже с двоеточием)
-      const dateTime = `${dateList} ${timeRange}`.trim();
+      // ✅ КЛЮЧЕВОЕ: разбиваем даты группы на подряд идущие блоки
+      const blocks = splitConsecutiveBlocks(g.dates);
 
-      // ключевая логика пуша для пикетов: buildPushRelative уже возвращает "Ближайшие три дня" и т.п.
-      const pushRelative = buildPushRelative(g.dates);
+      for (const datesBlock of blocks) {
+        const dateList = formatDateListHuman(datesBlock);
+        const timeRange = g.time.timeText; // "с 18:30 до 20:30"
+        const dateTime = `${dateList} ${timeRange}`.trim();
 
-      const placeTextRaw = g.place_final ?? "";
-      const placeText = formatPlaceHuman(placeTextRaw);
-      const placePush = detectPlacePush(placeTextRaw);
+        // ✅ теперь на блоках подряд будет "Ближайшие N дней", а на одиночных — "Завтра"
+        const pushRelative = buildPushRelative(datesBlock);
 
-      const topicFull = (g.topic_raw || "").trim();
-      const topicShortFinal = (topicShort || topicFull || "").trim();
+        const placeTextRaw = g.place_final ?? "";
+        const placeText = formatPlaceHuman(placeTextRaw);
+        const placePush = detectPlacePush(placeTextRaw);
 
-      const vars = {
-        ADDRESS: g.address,
-        DATE_LIST: dateList,
-        TIME_RANGE: timeRange,
-        DATE_TIME: dateTime,
-        PUSH_RELATIVE: pushRelative,
-        PLACE_TEXT: placeText,
-        PLACE_PUSH: placePush,
-        TOPIC_FULL: topicFull,
-        TOPIC_SHORT: topicShortFinal,
-        REASON: cancelReason,
-        WHEN_WORD: whenWord,
-        LINK: link,
-      };
+        const topicFull = (g.topic_raw || "").trim();
+        const topicShortFinal = (topicShort || topicFull || "").trim();
 
-      const rules = templateFinal.rules || {};
-      const errs = [];
+        const vars = {
+          ADDRESS: g.address,
+          DATE_LIST: dateList,
+          TIME_RANGE: timeRange,
+          DATE_TIME: dateTime,
+          PUSH_RELATIVE: pushRelative,
+          PLACE_TEXT: placeText,
+          PLACE_PUSH: placePush,
+          TOPIC_FULL: topicFull,
+          TOPIC_SHORT: topicShortFinal,
+          REASON: cancelReason,
+          WHEN_WORD: whenWord,
+          LINK: link,
+        };
 
-      if (rules.requires_place_text && !placeText) errs.push("Не заполнено место (PLACE_TEXT)");
-      if (rules.requires_place_push && !placePush) errs.push("Не выбран вариант PLACE_PUSH");
-      if (rules.requires_topic && !topicFull) errs.push("Не заполнена тематика (TOPIC_FULL)");
-      if (rules.requires_reason && !cancelReason) errs.push("Не выбрана причина (REASON)");
+        const rules = templateFinal.rules || {};
+        const errs = [];
 
-      out.push({
-        event_type: tab,
-        scenario_key: scenarioKeyFinal,
-        address: g.address,
-        date_list_human: dateList,
-        time_range_human: timeRange,
-        news_title: renderTemplate(templateFinal.title_news, vars),
-        news_html: renderTemplate(templateFinal.body_news_html, vars),
-        push_title: renderTemplate(templateFinal.push_title, vars),
-        push_body: renderTemplate(templateFinal.push_body, vars),
-        status: errs.length ? "error" : "ok",
-        error_text: errs.join("; "),
-      });
+        if (rules.requires_place_text && !placeText) errs.push("Не заполнено место (PLACE_TEXT)");
+        if (rules.requires_place_push && !placePush) errs.push("Не выбран вариант PLACE_PUSH");
+        if (rules.requires_topic && !topicFull) errs.push("Не заполнена тематика (TOPIC_FULL)");
+        if (rules.requires_reason && !cancelReason) errs.push("Не выбрана причина (REASON)");
+
+        out.push({
+          event_type: tab,
+          scenario_key: scenarioKeyFinal,
+          address: g.address,
+          date_list_human: dateList,
+          time_range_human: timeRange,
+          news_title: renderTemplate(templateFinal.title_news, vars),
+          news_html: renderTemplate(templateFinal.body_news_html, vars),
+          push_title: renderTemplate(templateFinal.push_title, vars),
+          push_body: renderTemplate(templateFinal.push_body, vars),
+          status: errs.length ? "error" : "ok",
+          error_text: errs.join("; "),
+        });
+      }
     }
 
     setResults(out);
